@@ -77,8 +77,11 @@ class HomeScreen extends ConsumerWidget {
               outsideTextStyle: TextStyle(
                 color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
               ),
+              markersMaxCount: 1,
+              markerSize: 5,
+              markersAnchor: 0.82,
               markerDecoration: BoxDecoration(
-                color: theme.colorScheme.primary,
+                color: theme.colorScheme.primary.withValues(alpha: 0.55),
                 shape: BoxShape.circle,
               ),
               todayDecoration: BoxDecoration(

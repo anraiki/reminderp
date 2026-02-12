@@ -28,6 +28,11 @@ class NotificationService {
   int _nextId = 1000;
 
   Future<void> initialize() async {
+    await _initializePluginCore();
+    await _requestPermissions();
+  }
+
+  Future<void> _initializePluginCore() async {
     if (_isInitialized) return;
     _isInitialized = true;
 
@@ -66,7 +71,9 @@ class NotificationService {
       onDidReceiveNotificationResponse: handleNotificationResponse,
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
+  }
 
+  Future<void> _requestPermissions() async {
     final android = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -88,7 +95,7 @@ class NotificationService {
   }
 
   Future<void> sendImmediateTestReminder() async {
-    await initialize();
+    await _initializePluginCore();
     final int id = _nextId++;
     final payload = jsonEncode({'kind': 'test', 'id': id});
 
@@ -106,7 +113,7 @@ class NotificationService {
   }
 
   Future<void> handleNotificationResponse(NotificationResponse response) async {
-    await initialize();
+    await _initializePluginCore();
 
     final actionId = response.actionId;
     if (actionId == null) return;
@@ -127,6 +134,8 @@ class NotificationService {
   }
 
   Future<void> _scheduleSnooze({required int minutes}) async {
+    await _initializePluginCore();
+
     final int id = _nextId++;
     final payload = jsonEncode({
       'kind': 'snoozed',
@@ -165,6 +174,7 @@ class NotificationService {
         AndroidNotificationAction(
           _actionSnoozeCustom,
           'Snooze custom',
+          showsUserInterface: true,
           inputs: <AndroidNotificationActionInput>[
             AndroidNotificationActionInput(label: 'Minutes'),
           ],
