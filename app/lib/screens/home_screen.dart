@@ -5,6 +5,7 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../models/reminder_list.dart';
 import '../providers/reminder_provider.dart';
+import '../services/notification_service.dart';
 import '../utils/icon_helpers.dart';
 import '../widgets/day_reminders_list.dart';
 import 'create_reminder_screen.dart';
@@ -222,6 +223,26 @@ class _AppDrawer extends ConsumerWidget {
                 Navigator.of(
                   context,
                 ).push(MaterialPageRoute(builder: (_) => const SignInScreen()));
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.notifications_active_outlined,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              title: const Text('Send test reminder'),
+              subtitle: Text(
+                'Immediate notification for snooze testing',
+                style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+              ),
+              onTap: () async {
+                Navigator.pop(context);
+                await NotificationService.instance.sendImmediateTestReminder();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Test reminder sent')),
+                  );
+                }
               },
             ),
             const Divider(),

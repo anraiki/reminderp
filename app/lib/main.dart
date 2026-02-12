@@ -4,17 +4,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'providers/reminder_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/db_service.dart';
+import 'services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.instance.initialize();
   final dbService = DbService();
   await dbService.init();
 
   runApp(
     ProviderScope(
-      overrides: [
-        dbServiceProvider.overrideWithValue(dbService),
-      ],
+      overrides: [dbServiceProvider.overrideWithValue(dbService)],
       child: const MyApp(),
     ),
   );
@@ -65,9 +65,7 @@ class MyApp extends StatelessWidget {
           selectedColor: const Color(0xFF319795),
           labelStyle: const TextStyle(color: Color(0xFFE2E8F0)),
           side: BorderSide(color: const Color(0xFF4A5568)),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(6),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
@@ -102,9 +100,7 @@ class MyApp extends StatelessWidget {
           backgroundColor: Color(0xFF1A202C),
           surfaceTintColor: Colors.transparent,
         ),
-        dividerTheme: const DividerThemeData(
-          color: Color(0xFF4A5568),
-        ),
+        dividerTheme: const DividerThemeData(color: Color(0xFF4A5568)),
         textTheme: const TextTheme(
           titleMedium: TextStyle(
             color: Color(0xFFE2E8F0),
