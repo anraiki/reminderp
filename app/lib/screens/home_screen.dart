@@ -8,6 +8,7 @@ import '../providers/reminder_provider.dart';
 import '../utils/icon_helpers.dart';
 import '../widgets/day_reminders_list.dart';
 import 'create_reminder_screen.dart';
+import 'sign_in_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -54,8 +55,11 @@ class HomeScreen extends ConsumerWidget {
             calendarFormat: calendarFormat,
             selectedDayPredicate: (day) => isSameDay(day, selectedDate),
             onDaySelected: (selected, focused) {
-              ref.read(selectedDateProvider.notifier).state =
-                  DateTime.utc(selected.year, selected.month, selected.day);
+              ref.read(selectedDateProvider.notifier).state = DateTime.utc(
+                selected.year,
+                selected.month,
+                selected.day,
+              );
             },
             onFormatChanged: (format) {
               ref.read(calendarFormatProvider.notifier).state = format;
@@ -215,9 +219,9 @@ class _AppDrawer extends ConsumerWidget {
               ),
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Sign in coming soon')),
-                );
+                Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const SignInScreen()));
               },
             ),
             const Divider(),
@@ -270,8 +274,7 @@ class _AppDrawer extends ConsumerWidget {
                     );
                   },
                 ),
-                loading: () =>
-                    const Center(child: CircularProgressIndicator()),
+                loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => Center(child: Text('Error: $e')),
               ),
             ),
@@ -280,10 +283,7 @@ class _AppDrawer extends ConsumerWidget {
 
             // Add list button
             ListTile(
-              leading: Icon(
-                Icons.add,
-                color: theme.colorScheme.primary,
-              ),
+              leading: Icon(Icons.add, color: theme.colorScheme.primary),
               title: Text(
                 'New List',
                 style: TextStyle(color: theme.colorScheme.primary),
@@ -301,7 +301,10 @@ class _AppDrawer extends ConsumerWidget {
   }
 
   void _showListOptionsSheet(
-      BuildContext context, WidgetRef ref, ReminderList list) {
+    BuildContext context,
+    WidgetRef ref,
+    ReminderList list,
+  ) {
     showModalBottomSheet(
       context: context,
       builder: (ctx) => SafeArea(
@@ -317,11 +320,14 @@ class _AppDrawer extends ConsumerWidget {
               },
             ),
             ListTile(
-              leading: Icon(Icons.delete_outline,
-                  color: Theme.of(context).colorScheme.error),
-              title: Text('Delete',
-                  style:
-                      TextStyle(color: Theme.of(context).colorScheme.error)),
+              leading: Icon(
+                Icons.delete_outline,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: Text(
+                'Delete',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
               onTap: () {
                 Navigator.pop(ctx);
                 _showDeleteConfirmation(context, ref, list);
@@ -357,8 +363,7 @@ class _AppDrawer extends ConsumerWidget {
               const SizedBox(height: 16),
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Icon',
-                    style: Theme.of(ctx).textTheme.bodySmall),
+                child: Text('Icon', style: Theme.of(ctx).textTheme.bodySmall),
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -374,10 +379,9 @@ class _AppDrawer extends ConsumerWidget {
                         : Theme.of(ctx).colorScheme.onSurfaceVariant,
                     style: isSelected
                         ? IconButton.styleFrom(
-                            backgroundColor: Theme.of(ctx)
-                                .colorScheme
-                                .primary
-                                .withValues(alpha: 0.15),
+                            backgroundColor: Theme.of(
+                              ctx,
+                            ).colorScheme.primary.withValues(alpha: 0.15),
                           )
                         : null,
                     onPressed: () {
@@ -415,7 +419,10 @@ class _AppDrawer extends ConsumerWidget {
   }
 
   void _showRenameDialog(
-      BuildContext context, WidgetRef ref, ReminderList list) {
+    BuildContext context,
+    WidgetRef ref,
+    ReminderList list,
+  ) {
     final nameController = TextEditingController(text: list.name);
 
     showDialog(
@@ -425,9 +432,7 @@ class _AppDrawer extends ConsumerWidget {
         content: TextField(
           controller: nameController,
           autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'List name',
-          ),
+          decoration: const InputDecoration(labelText: 'List name'),
           textCapitalization: TextCapitalization.sentences,
         ),
         actions: [
@@ -453,7 +458,10 @@ class _AppDrawer extends ConsumerWidget {
   }
 
   void _showDeleteConfirmation(
-      BuildContext context, WidgetRef ref, ReminderList list) {
+    BuildContext context,
+    WidgetRef ref,
+    ReminderList list,
+  ) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -509,8 +517,9 @@ class _DrawerListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final color =
-        selected ? theme.colorScheme.primary : theme.colorScheme.onSurface;
+    final color = selected
+        ? theme.colorScheme.primary
+        : theme.colorScheme.onSurface;
 
     return ListTile(
       leading: Icon(icon, color: color),
