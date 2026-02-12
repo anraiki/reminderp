@@ -76,10 +76,10 @@ export function CalendarView({ selectedDate, onSelectDate }: CalendarViewProps) 
           bottom: "2px",
           left: "50%",
           transform: "translateX(-50%)",
-          width: "4px",
-          height: "4px",
+          width: "3px",
+          height: "3px",
           borderRadius: "50%",
-          backgroundColor: "#48BB78",
+          backgroundColor: "#7ADBD3",
         },
       }}
     >

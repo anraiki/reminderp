@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'dart:convert';
 
 import '../models/reminder.dart';
 import '../models/trigger.dart';
@@ -33,6 +34,9 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
   DateTimeRange? _selectedRange;
   bool _isRecurring = false;
   String _recurrence = 'daily';
+  int _customEvery = 1;
+  String _customUnit = 'day';
+  late DateTime _customStartDate;
   List<_SmartSuggestion> _smartSuggestions = [];
   bool _saving = false;
   bool _loadingExisting = false;
@@ -46,6 +50,11 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
   void initState() {
     super.initState();
     _selectedDate = widget.initialDate;
+    _customStartDate = DateTime(
+      widget.initialDate.year,
+      widget.initialDate.month,
+      widget.initialDate.day,
+    );
     _selectedListId = widget.initialListId;
     _viewMode = widget.startInViewMode;
     _bodyController.addListener(_handleBodyChanged);
@@ -232,7 +241,35 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
         minute: trigger.at.minute,
       );
       _isRecurring = trigger.every != null;
-      _recurrence = trigger.every ?? _recurrence;
+      final recurrence = trigger.every;
+      if (recurrence != null && recurrence.startsWith('custom:')) {
+        _recurrence = 'custom';
+        final parts = recurrence.split(':');
+        if (parts.length >= 3) {
+          final parsedEvery = int.tryParse(parts[1]);
+          if (parsedEvery != null && parsedEvery > 0) {
+            _customEvery = parsedEvery;
+          }
+          if (parts[2] == 'day' ||
+              parts[2] == 'week' ||
+              parts[2] == 'month' ||
+              parts[2] == 'year') {
+            _customUnit = parts[2];
+          }
+        }
+        if (parts.length >= 4) {
+          final parsedStart = DateTime.tryParse(parts[3]);
+          if (parsedStart != null) {
+            _customStartDate = DateTime(
+              parsedStart.year,
+              parsedStart.month,
+              parsedStart.day,
+            );
+          }
+        }
+      } else {
+        _recurrence = recurrence ?? _recurrence;
+      }
     }
     setState(() => _loadingExisting = false);
   }
@@ -320,6 +357,40 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
     }
   }
 
+  Future<void> _pickCustomStartDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _customStartDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2040),
+    );
+    if (picked != null) {
+      setState(() {
+        _customStartDate = DateTime(picked.year, picked.month, picked.day);
+      });
+    }
+  }
+
+  String _buildRecurrenceValue() {
+    if (_recurrence == 'custom') {
+      final start = DateTime(
+        _customStartDate.year,
+        _customStartDate.month,
+        _customStartDate.day,
+      ).toIso8601String();
+      return 'custom:$_customEvery:$_customUnit:$start';
+    }
+    return _recurrence;
+  }
+
+  String _recurrenceDisplayLabel() {
+    if (_recurrence == 'custom') {
+      final unit = _customEvery == 1 ? _customUnit : '${_customUnit}s';
+      return 'Every $_customEvery $unit, starts ${DateFormat.yMMMd().format(_customStartDate)}';
+    }
+    return '${_recurrence[0].toUpperCase()}${_recurrence.substring(1)}';
+  }
+
   Future<void> _save() async {
     setState(() => _saving = true);
 
@@ -334,7 +405,7 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
       _selectedTime.hour,
       _selectedTime.minute,
     );
-    trigger.every = _isRecurring ? _recurrence : null;
+    trigger.every = _isRecurring ? _buildRecurrenceValue() : null;
     trigger.times = null;
 
     final triggerId = _editingTriggerId != null
@@ -361,6 +432,52 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
     if (mounted) {
       Navigator.of(context).pop(true);
     }
+  }
+
+  void _debugPrintReminderState() {
+    final recurrenceValue = _isRecurring ? _buildRecurrenceValue() : null;
+    final payload = <String, dynamic>{
+      'mode': _viewMode ? 'view' : 'edit',
+      'existingReminderId': widget.existingReminderId,
+      'reminder': {
+        'id': _editingReminder?.id,
+        'body': _bodyController.text.trim().isEmpty
+            ? null
+            : _bodyController.text.trim(),
+        'listId': _selectedListId,
+        'createdAt': _editingReminder?.createdAt.toIso8601String(),
+        'updatedAt': _editingReminder?.updatedAt?.toIso8601String(),
+        'convexId': _editingReminder?.convexId,
+      },
+      'trigger': {
+        'id': _editingTriggerId,
+        'at': DateTime(
+          _selectedDate.year,
+          _selectedDate.month,
+          _selectedDate.day,
+          _selectedTime.hour,
+          _selectedTime.minute,
+        ).toIso8601String(),
+        'every': recurrenceValue,
+        'times': _editingTrigger?.times,
+      },
+      'customRecurrence': _recurrence == 'custom'
+          ? {
+              'every': _customEvery,
+              'unit': _customUnit,
+              'starts': _customStartDate.toIso8601String(),
+            }
+          : null,
+      'selectedRange': _selectedRange == null
+          ? null
+          : {
+              'start': _selectedRange!.start.toIso8601String(),
+              'end': _selectedRange!.end.toIso8601String(),
+            },
+    };
+
+    final pretty = const JsonEncoder.withIndent('  ').convert(payload);
+    debugPrint('REMINDER_DEBUG:\n$pretty');
   }
 
   @override
@@ -527,6 +644,10 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
                             value: 'monthly',
                             child: Text('Monthly'),
                           ),
+                          DropdownMenuItem(
+                            value: 'custom',
+                            child: Text('Custom'),
+                          ),
                         ],
                         onChanged: (value) {
                           if (value != null) {
@@ -534,13 +655,102 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
                           }
                         },
                       ),
+                      if (_recurrence == 'custom') ...[
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            const Text('Every'),
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              width: 88,
+                              child: TextFormField(
+                                initialValue: _customEvery.toString(),
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  border: OutlineInputBorder(),
+                                ),
+                                onChanged: (value) {
+                                  final parsed = int.tryParse(value);
+                                  if (parsed != null && parsed > 0) {
+                                    _customEvery = parsed;
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                initialValue: _customUnit,
+                                decoration: const InputDecoration(
+                                  border: OutlineInputBorder(),
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'day',
+                                    child: Text('day'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'week',
+                                    child: Text('week'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'month',
+                                    child: Text('month'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'year',
+                                    child: Text('year'),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  if (value != null) {
+                                    setState(() => _customUnit = value);
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        InkWell(
+                          onTap: _pickCustomStartDate,
+                          borderRadius: BorderRadius.circular(4),
+                          child: InputDecorator(
+                            decoration: const InputDecoration(
+                              labelText: 'Starts',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.event),
+                              suffixIcon: Icon(Icons.edit_calendar),
+                            ),
+                            child: Text(
+                              DateFormat.yMMMMd().format(_customStartDate),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
+                  ] else if (_isRecurring) ...[
+                    InputDecorator(
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.repeat),
+                      ),
+                      child: Text(_recurrenceDisplayLabel()),
+                    ),
                   ],
                 ],
               ),
             ),
       bottomNavigationBar: _viewMode
-          ? null
+          ? SafeArea(
+              top: false,
+              minimum: const EdgeInsets.all(16),
+              child: OutlinedButton.icon(
+                onPressed: _debugPrintReminderState,
+                icon: const Icon(Icons.bug_report_outlined),
+                label: const Text('Debug Print Reminder'),
+              ),
+            )
           : AnimatedPadding(
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOut,

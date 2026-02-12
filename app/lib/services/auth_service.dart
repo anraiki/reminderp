@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'convex_client_service.dart';
+import 'sync_runtime_service.dart';
 
 class AuthService {
   static const _tokenKey = 'convex_auth_token';
@@ -21,6 +22,7 @@ class AuthService {
     final token = prefs.getString(_tokenKey);
     if (token != null && token.isNotEmpty) {
       await client.setAuth(token: token);
+      await SyncRuntimeService.instance.enableSync();
       return;
     }
 
@@ -108,6 +110,7 @@ class AuthService {
   Future<void> signOut() async {
     final client = await ConvexClientService.getClient();
     await client.setAuth(token: null);
+    SyncRuntimeService.instance.disableSync();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
     await prefs.remove(_refreshTokenKey);
@@ -142,6 +145,7 @@ class AuthService {
     if (refreshToken != null && refreshToken.isNotEmpty) {
       await prefs.setString(_refreshTokenKey, refreshToken);
     }
+    await SyncRuntimeService.instance.enableSync();
     return token;
   }
 }

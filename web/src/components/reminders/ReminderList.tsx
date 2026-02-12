@@ -11,7 +11,7 @@ import {
   Text,
   Stack,
 } from "@chakra-ui/react";
-import { MdDelete, MdAdd } from "react-icons/md";
+import { MdDelete, MdAdd, MdEdit } from "react-icons/md";
 import { CreateReminderDialog } from "./CreateReminderDialog";
 
 interface ReminderListProps {
@@ -26,6 +26,7 @@ export function ReminderList({ selectedDate, listId }: ReminderListProps) {
   const removeReminder = useMutation(api.reminders.remove);
   const removeTrigger = useMutation(api.triggers.remove);
   const [showCreate, setShowCreate] = useState(false);
+  const [editingReminderId, setEditingReminderId] = useState<string | null>(null);
 
   const triggerMap = useMemo(
     () => new Map(triggers.map((t) => [t._id, t])),
@@ -48,6 +49,16 @@ export function ReminderList({ selectedDate, listId }: ReminderListProps) {
       return isSameDay(new Date(r.createdAt), selectedDate);
     });
   }, [reminders, triggerMap, selectedDate, listId]);
+
+  const editingReminder =
+    editingReminderId != null
+      ? reminders.find((r) => r._id === editingReminderId) ?? null
+      : null;
+
+  const editingTrigger =
+    editingReminder?.triggerId != null
+      ? triggerMap.get(editingReminder.triggerId) ?? null
+      : null;
 
   const handleDelete = async (reminderId: string, triggerId?: string) => {
     await removeReminder({ id: reminderId as any });
@@ -117,15 +128,21 @@ export function ReminderList({ selectedDate, listId }: ReminderListProps) {
                   </Flex>
                 </Box>
                 <IconButton
+                  aria-label="Edit reminder"
+                  size="sm"
+                  variant="ghost"
+                  color="#A0AEC0"
+                  onClick={() => setEditingReminderId(reminder._id)}
+                >
+                  <MdEdit />
+                </IconButton>
+                <IconButton
                   aria-label="Delete reminder"
                   size="sm"
                   variant="ghost"
                   color="#FC8181"
                   onClick={() =>
-                    handleDelete(
-                      reminder._id,
-                      reminder.triggerId ?? undefined
-                    )
+                    handleDelete(reminder._id, reminder.triggerId ?? undefined)
                   }
                 >
                   <MdDelete />
@@ -140,6 +157,31 @@ export function ReminderList({ selectedDate, listId }: ReminderListProps) {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         defaultDate={selectedDate}
+      />
+
+      <CreateReminderDialog
+        open={editingReminder != null}
+        onClose={() => setEditingReminderId(null)}
+        defaultDate={selectedDate}
+        reminder={
+          editingReminder
+            ? {
+                id: editingReminder._id,
+                body: editingReminder.body,
+                listId: editingReminder.listId ?? undefined,
+                triggerId: editingReminder.triggerId ?? undefined,
+              }
+            : null
+        }
+        trigger={
+          editingTrigger
+            ? {
+                id: editingTrigger._id,
+                at: editingTrigger.at,
+                every: editingTrigger.every,
+              }
+            : null
+        }
       />
     </Box>
   );

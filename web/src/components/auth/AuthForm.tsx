@@ -27,6 +27,22 @@ export function AuthForm() {
     }
   };
 
+  const handleGoogleAuth = async () => {
+    setLoading(true);
+    try {
+      await signIn("google");
+    } catch (err) {
+      toaster.create({
+        title: "Google sign in failed",
+        description:
+          err instanceof Error ? err.message : "Something went wrong",
+        type: "error",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <Box bg="#2D3748" p="8" borderRadius="lg" w="full" maxW="400px">
       <form onSubmit={handleSubmit}>
@@ -62,6 +78,17 @@ export function AuthForm() {
             w="full"
           >
             {flow === "signIn" ? "Sign In" : "Sign Up"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            borderColor="#4A5568"
+            color="#E2E8F0"
+            loading={loading}
+            onClick={handleGoogleAuth}
+            w="full"
+          >
+            Continue with Google
           </Button>
           <Text
             textAlign="center"
