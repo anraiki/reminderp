@@ -5,10 +5,12 @@ import 'providers/reminder_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/db_service.dart';
 import 'services/notification_service.dart';
+import 'services/revenuecat_service.dart';
 import 'services/sync_runtime_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await RevenueCatService.initialize();
   await NotificationService.instance.initialize();
   final dbService = DbService();
   await dbService.init();
