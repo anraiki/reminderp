@@ -34,7 +34,6 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
   bool _isRecurring = false;
   String _recurrence = 'daily';
   List<_SmartSuggestion> _smartSuggestions = [];
-  bool _showDateField = false;
   bool _saving = false;
   bool _loadingExisting = false;
   bool _viewMode = false;
@@ -234,7 +233,6 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
       );
       _isRecurring = trigger.every != null;
       _recurrence = trigger.every ?? _recurrence;
-      _showDateField = true;
     }
     setState(() => _loadingExisting = false);
   }
@@ -242,14 +240,12 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
   void _applyDate(DateTime date) {
     setState(() {
       _selectedDate = DateTime(date.year, date.month, date.day);
-      _showDateField = true;
     });
   }
 
   void _applyTime(TimeOfDay time) {
     setState(() {
       _selectedTime = time;
-      _showDateField = true;
     });
   }
 
@@ -257,7 +253,6 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
     setState(() {
       _selectedRange = range;
       _selectedDate = range.start;
-      _showDateField = true;
     });
   }
 
@@ -386,7 +381,11 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
               tooltip: _viewMode ? 'Edit reminder' : 'View mode',
               icon: Icon(_viewMode ? Icons.edit_outlined : Icons.visibility),
               onPressed: () {
-                setState(() => _viewMode = !_viewMode);
+                final nextViewMode = !_viewMode;
+                if (!nextViewMode) {
+                  _updateSmartSuggestions(_bodyController.text);
+                }
+                setState(() => _viewMode = nextViewMode);
               },
             ),
         ],
@@ -398,27 +397,34 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (!_viewMode && _smartSuggestions.isNotEmpty) ...[
-                    SizedBox(
-                      height: 36,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _smartSuggestions.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 8),
-                        itemBuilder: (context, index) {
-                          final suggestion = _smartSuggestions[index];
-                          return ActionChip(
-                            label: Text(suggestion.label),
-                            onPressed: () {
-                              _autocompleteWith(suggestion.completion);
-                              suggestion.apply();
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOut,
+                    child: (!_viewMode && _smartSuggestions.isNotEmpty)
+                        ? Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: SizedBox(
+                              height: 36,
+                              child: ListView.separated(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: _smartSuggestions.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(width: 8),
+                                itemBuilder: (context, index) {
+                                  final suggestion = _smartSuggestions[index];
+                                  return ActionChip(
+                                    label: Text(suggestion.label),
+                                    onPressed: () {
+                                      _autocompleteWith(suggestion.completion);
+                                      suggestion.apply();
+                                    },
+                                  );
+                                },
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
                   TextField(
                     controller: _bodyController,
                     enabled: !_viewMode,
@@ -438,128 +444,98 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
                     onChanged: (id) => setState(() => _selectedListId = id),
                   ),
                   const SizedBox(height: 24),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      ActionChip(
-                        avatar: const Icon(Icons.calendar_today, size: 18),
-                        label: Text(_showDateField ? 'Date ▲' : 'Date ▼'),
-                        onPressed: () {
-                          setState(() => _showDateField = !_showDateField);
+                  InkWell(
+                    onTap: _viewMode ? null : _pickDate,
+                    borderRadius: BorderRadius.circular(4),
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'Date',
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.calendar_today),
+                        suffixIcon: _viewMode
+                            ? null
+                            : const Icon(Icons.edit_calendar),
+                      ),
+                      child: Text(DateFormat.yMMMMd().format(_selectedDate)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  InkWell(
+                    onTap: _viewMode ? null : _pickTime,
+                    borderRadius: BorderRadius.circular(4),
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'Time',
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.access_time),
+                        suffixIcon: _viewMode ? null : const Icon(Icons.edit),
+                      ),
+                      child: Text(_selectedTime.format(context)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  InkWell(
+                    onTap: _viewMode ? null : _pickDateRange,
+                    borderRadius: BorderRadius.circular(4),
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'Range',
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.date_range),
+                        suffixIcon: _viewMode
+                            ? null
+                            : const Icon(Icons.edit_calendar),
+                      ),
+                      child: Text(
+                        _selectedRange == null
+                            ? 'No range selected'
+                            : '${DateFormat.yMMMd().format(_selectedRange!.start)} - ${DateFormat.yMMMd().format(_selectedRange!.end)}',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (!_viewMode) ...[
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Recurring'),
+                      subtitle: Text(
+                        _isRecurring ? 'Repeat $_recurrence' : 'Remind once',
+                      ),
+                      value: _isRecurring,
+                      onChanged: (value) =>
+                          setState(() => _isRecurring = value),
+                    ),
+                    if (_isRecurring) ...[
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: _recurrence,
+                        decoration: const InputDecoration(
+                          labelText: 'Repeat',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.repeat),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'daily',
+                            child: Text('Daily'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'weekly',
+                            child: Text('Weekly'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'monthly',
+                            child: Text('Monthly'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() => _recurrence = value);
+                          }
                         },
                       ),
                     ],
-                  ),
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOut,
-                    child: _showDateField
-                        ? Padding(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: Column(
-                              children: [
-                                SwitchListTile.adaptive(
-                                  contentPadding: EdgeInsets.zero,
-                                  title: const Text('Recurring'),
-                                  subtitle: Text(
-                                    _isRecurring
-                                        ? 'Repeat $_recurrence'
-                                        : 'Remind once',
-                                  ),
-                                  value: _isRecurring,
-                                  onChanged: _viewMode
-                                      ? null
-                                      : (value) => setState(
-                                          () => _isRecurring = value,
-                                        ),
-                                ),
-                                if (_isRecurring) ...[
-                                  const SizedBox(height: 8),
-                                  DropdownButtonFormField<String>(
-                                    initialValue: _recurrence,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Repeat',
-                                      border: OutlineInputBorder(),
-                                      prefixIcon: Icon(Icons.repeat),
-                                    ),
-                                    items: const [
-                                      DropdownMenuItem(
-                                        value: 'daily',
-                                        child: Text('Daily'),
-                                      ),
-                                      DropdownMenuItem(
-                                        value: 'weekly',
-                                        child: Text('Weekly'),
-                                      ),
-                                      DropdownMenuItem(
-                                        value: 'monthly',
-                                        child: Text('Monthly'),
-                                      ),
-                                    ],
-                                    onChanged: _viewMode
-                                        ? null
-                                        : (value) {
-                                            if (value != null) {
-                                              setState(
-                                                () => _recurrence = value,
-                                              );
-                                            }
-                                          },
-                                  ),
-                                  const SizedBox(height: 12),
-                                ],
-                                InkWell(
-                                  onTap: _viewMode ? null : _pickDate,
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: InputDecorator(
-                                    decoration: const InputDecoration(
-                                      labelText: 'Date',
-                                      border: OutlineInputBorder(),
-                                      prefixIcon: Icon(Icons.calendar_today),
-                                      suffixIcon: Icon(Icons.edit_calendar),
-                                    ),
-                                    child: Text(
-                                      DateFormat.yMMMMd().format(_selectedDate),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                InkWell(
-                                  onTap: _viewMode ? null : _pickTime,
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: InputDecorator(
-                                    decoration: const InputDecoration(
-                                      labelText: 'Time',
-                                      border: OutlineInputBorder(),
-                                      prefixIcon: Icon(Icons.access_time),
-                                      suffixIcon: Icon(Icons.edit),
-                                    ),
-                                    child: Text(_selectedTime.format(context)),
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                InkWell(
-                                  onTap: _viewMode ? null : _pickDateRange,
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: InputDecorator(
-                                    decoration: const InputDecoration(
-                                      labelText: 'Range',
-                                      border: OutlineInputBorder(),
-                                      prefixIcon: Icon(Icons.date_range),
-                                      suffixIcon: Icon(Icons.edit_calendar),
-                                    ),
-                                    child: Text(
-                                      _selectedRange == null
-                                          ? 'No range selected'
-                                          : '${DateFormat.yMMMd().format(_selectedRange!.start)} - ${DateFormat.yMMMd().format(_selectedRange!.end)}',
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
+                  ],
                 ],
               ),
             ),
