@@ -117,6 +117,15 @@ class NotificationService {
 
     final actionId = response.actionId;
     if (actionId == null) return;
+    final currentId = response.id;
+
+    if (actionId == _actionSnooze5 ||
+        actionId == _actionSnooze15 ||
+        actionId == _actionSnoozeCustom) {
+      if (currentId != null) {
+        await _plugin.cancel(id: currentId);
+      }
+    }
 
     if (actionId == _actionSnooze5) {
       await _scheduleSnooze(minutes: 5);
@@ -169,11 +178,20 @@ class NotificationService {
       priority: Priority.high,
       category: AndroidNotificationCategory.reminder,
       actions: <AndroidNotificationAction>[
-        AndroidNotificationAction(_actionSnooze5, 'Snooze 5m'),
-        AndroidNotificationAction(_actionSnooze15, 'Snooze 15m'),
+        AndroidNotificationAction(
+          _actionSnooze5,
+          'Snooze 5m',
+          cancelNotification: true,
+        ),
+        AndroidNotificationAction(
+          _actionSnooze15,
+          'Snooze 15m',
+          cancelNotification: true,
+        ),
         AndroidNotificationAction(
           _actionSnoozeCustom,
           'Snooze custom',
+          cancelNotification: true,
           showsUserInterface: true,
           inputs: <AndroidNotificationActionInput>[
             AndroidNotificationActionInput(label: 'Minutes'),

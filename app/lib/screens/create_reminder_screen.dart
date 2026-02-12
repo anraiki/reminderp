@@ -12,10 +12,14 @@ class CreateReminderScreen extends ConsumerStatefulWidget {
     super.key,
     required this.initialDate,
     this.initialListId,
+    this.existingReminderId,
+    this.startInViewMode = false,
   });
 
   final DateTime initialDate;
   final int? initialListId;
+  final int? existingReminderId;
+  final bool startInViewMode;
 
   @override
   ConsumerState<CreateReminderScreen> createState() =>
@@ -27,18 +31,29 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
   late DateTime _selectedDate;
   TimeOfDay _selectedTime = TimeOfDay.now();
   DateTimeRange? _selectedRange;
+  bool _isRecurring = false;
+  String _recurrence = 'daily';
   List<_SmartSuggestion> _smartSuggestions = [];
   bool _showDateField = false;
   bool _saving = false;
+  bool _loadingExisting = false;
+  bool _viewMode = false;
   int? _selectedListId;
+  Reminder? _editingReminder;
+  Trigger? _editingTrigger;
+  int? _editingTriggerId;
 
   @override
   void initState() {
     super.initState();
     _selectedDate = widget.initialDate;
     _selectedListId = widget.initialListId;
+    _viewMode = widget.startInViewMode;
     _bodyController.addListener(_handleBodyChanged);
     _updateSmartSuggestions(_bodyController.text);
+    if (widget.existingReminderId != null) {
+      _loadExistingReminder(widget.existingReminderId!);
+    }
   }
 
   @override
@@ -49,6 +64,7 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
   }
 
   void _handleBodyChanged() {
+    if (_viewMode) return;
     _updateSmartSuggestions(_bodyController.text);
   }
 
@@ -179,9 +195,48 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
       }
     }
 
+    if (!mounted) return;
     setState(() {
       _smartSuggestions = suggestions.take(5).toList();
     });
+  }
+
+  Future<void> _loadExistingReminder(int id) async {
+    setState(() => _loadingExisting = true);
+    final db = ref.read(dbServiceProvider);
+    final reminder = await db.getReminder(id);
+    if (!mounted) return;
+    if (reminder == null) {
+      setState(() => _loadingExisting = false);
+      return;
+    }
+
+    Trigger? trigger;
+    if (reminder.triggerId != null) {
+      trigger = await db.getTrigger(reminder.triggerId!);
+    }
+    if (!mounted) return;
+
+    _editingReminder = reminder;
+    _editingTrigger = trigger;
+    _editingTriggerId = reminder.triggerId;
+    _bodyController.text = reminder.body ?? '';
+    _selectedListId = reminder.listId;
+    if (trigger != null) {
+      _selectedDate = DateTime(
+        trigger.at.year,
+        trigger.at.month,
+        trigger.at.day,
+      );
+      _selectedTime = TimeOfDay(
+        hour: trigger.at.hour,
+        minute: trigger.at.minute,
+      );
+      _isRecurring = trigger.every != null;
+      _recurrence = trigger.every ?? _recurrence;
+      _showDateField = true;
+    }
+    setState(() => _loadingExisting = false);
   }
 
   void _applyDate(DateTime date) {
@@ -275,24 +330,38 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
 
     final db = ref.read(dbServiceProvider);
 
-    final trigger = Trigger()
-      ..at = DateTime(
-        _selectedDate.year,
-        _selectedDate.month,
-        _selectedDate.day,
-        _selectedTime.hour,
-        _selectedTime.minute,
-      );
-    final triggerId = await db.createTrigger(trigger);
+    final trigger = _editingTrigger ?? Trigger()
+      ..at = DateTime.now();
+    trigger.at = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+      _selectedTime.hour,
+      _selectedTime.minute,
+    );
+    trigger.every = _isRecurring ? _recurrence : null;
+    trigger.times = null;
 
-    final reminder = Reminder()
+    final triggerId = _editingTriggerId != null
+        ? await db.updateTrigger(trigger)
+        : await db.createTrigger(trigger);
+
+    final reminder = _editingReminder ?? Reminder()
+      ..createdAt = DateTime.now();
+
+    reminder
       ..body = _bodyController.text.trim().isEmpty
           ? null
           : _bodyController.text.trim()
-      ..createdAt = DateTime.now()
+      ..updatedAt = DateTime.now()
       ..triggerId = triggerId
       ..listId = _selectedListId;
-    await db.createReminder(reminder);
+
+    if (_editingReminder != null) {
+      await db.updateReminder(reminder);
+    } else {
+      await db.createReminder(reminder);
+    }
 
     if (mounted) {
       Navigator.of(context).pop(true);
@@ -301,149 +370,223 @@ class _CreateReminderScreenState extends ConsumerState<CreateReminderScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isEditing = widget.existingReminderId != null;
+    final title = switch ((isEditing, _viewMode)) {
+      (false, _) => 'New Reminder',
+      (true, true) => 'Reminder Details',
+      (true, false) => 'Edit Reminder',
+    };
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('New Reminder'),
+        title: Text(title),
+        actions: [
+          if (isEditing)
+            IconButton(
+              tooltip: _viewMode ? 'Edit reminder' : 'View mode',
+              icon: Icon(_viewMode ? Icons.edit_outlined : Icons.visibility),
+              onPressed: () {
+                setState(() => _viewMode = !_viewMode);
+              },
+            ),
+        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_smartSuggestions.isNotEmpty) ...[
-              SizedBox(
-                height: 36,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _smartSuggestions.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    final suggestion = _smartSuggestions[index];
-                    return ActionChip(
-                      label: Text(suggestion.label),
-                      onPressed: () {
-                        _autocompleteWith(suggestion.completion);
-                        suggestion.apply();
-                      },
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            TextField(
-              controller: _bodyController,
-              decoration: const InputDecoration(
-                hintText: 'What do you want to be reminded about?',
-                border: OutlineInputBorder(),
-              ),
-              textCapitalization: TextCapitalization.sentences,
-              maxLines: 3,
-              autofocus: true,
-            ),
-            const SizedBox(height: 16),
-            _ListPickerDropdown(
-              selectedListId: _selectedListId,
-              onChanged: (id) => setState(() => _selectedListId = id),
-            ),
-            const SizedBox(height: 24),
-            Wrap(
-              spacing: 8,
-              children: [
-                ActionChip(
-                  avatar: const Icon(Icons.calendar_today, size: 18),
-                  label: Text(_showDateField ? 'Date ▲' : 'Date ▼'),
-                  onPressed: () {
-                    setState(() => _showDateField = !_showDateField);
-                  },
-                ),
-              ],
-            ),
-            AnimatedSize(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOut,
-              child: _showDateField
-                  ? Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Column(
-                        children: [
-                          InkWell(
-                            onTap: _pickDate,
-                            borderRadius: BorderRadius.circular(4),
-                            child: InputDecorator(
-                              decoration: const InputDecoration(
-                                labelText: 'Date',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.calendar_today),
-                                suffixIcon: Icon(Icons.edit_calendar),
-                              ),
-                              child: Text(
-                                DateFormat.yMMMMd().format(_selectedDate),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          InkWell(
-                            onTap: _pickTime,
-                            borderRadius: BorderRadius.circular(4),
-                            child: InputDecorator(
-                              decoration: const InputDecoration(
-                                labelText: 'Time',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.access_time),
-                                suffixIcon: Icon(Icons.edit),
-                              ),
-                              child: Text(_selectedTime.format(context)),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          InkWell(
-                            onTap: _pickDateRange,
-                            borderRadius: BorderRadius.circular(4),
-                            child: InputDecorator(
-                              decoration: const InputDecoration(
-                                labelText: 'Range',
-                                border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.date_range),
-                                suffixIcon: Icon(Icons.edit_calendar),
-                              ),
-                              child: Text(
-                                _selectedRange == null
-                                    ? 'No range selected'
-                                    : '${DateFormat.yMMMd().format(_selectedRange!.start)} - ${DateFormat.yMMMd().format(_selectedRange!.end)}',
-                              ),
-                            ),
-                          ),
-                        ],
+      body: _loadingExisting
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (!_viewMode && _smartSuggestions.isNotEmpty) ...[
+                    SizedBox(
+                      height: 36,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _smartSuggestions.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final suggestion = _smartSuggestions[index];
+                          return ActionChip(
+                            label: Text(suggestion.label),
+                            onPressed: () {
+                              _autocompleteWith(suggestion.completion);
+                              suggestion.apply();
+                            },
+                          );
+                        },
                       ),
-                    )
-                  : const SizedBox.shrink(),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  TextField(
+                    controller: _bodyController,
+                    enabled: !_viewMode,
+                    readOnly: _viewMode,
+                    decoration: const InputDecoration(
+                      hintText: 'What do you want to be reminded about?',
+                      border: OutlineInputBorder(),
+                    ),
+                    textCapitalization: TextCapitalization.sentences,
+                    maxLines: 3,
+                    autofocus: widget.existingReminderId == null,
+                  ),
+                  const SizedBox(height: 16),
+                  _ListPickerDropdown(
+                    selectedListId: _selectedListId,
+                    enabled: !_viewMode,
+                    onChanged: (id) => setState(() => _selectedListId = id),
+                  ),
+                  const SizedBox(height: 24),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      ActionChip(
+                        avatar: const Icon(Icons.calendar_today, size: 18),
+                        label: Text(_showDateField ? 'Date ▲' : 'Date ▼'),
+                        onPressed: () {
+                          setState(() => _showDateField = !_showDateField);
+                        },
+                      ),
+                    ],
+                  ),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOut,
+                    child: _showDateField
+                        ? Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Column(
+                              children: [
+                                SwitchListTile.adaptive(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: const Text('Recurring'),
+                                  subtitle: Text(
+                                    _isRecurring
+                                        ? 'Repeat $_recurrence'
+                                        : 'Remind once',
+                                  ),
+                                  value: _isRecurring,
+                                  onChanged: _viewMode
+                                      ? null
+                                      : (value) => setState(
+                                          () => _isRecurring = value,
+                                        ),
+                                ),
+                                if (_isRecurring) ...[
+                                  const SizedBox(height: 8),
+                                  DropdownButtonFormField<String>(
+                                    initialValue: _recurrence,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Repeat',
+                                      border: OutlineInputBorder(),
+                                      prefixIcon: Icon(Icons.repeat),
+                                    ),
+                                    items: const [
+                                      DropdownMenuItem(
+                                        value: 'daily',
+                                        child: Text('Daily'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'weekly',
+                                        child: Text('Weekly'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'monthly',
+                                        child: Text('Monthly'),
+                                      ),
+                                    ],
+                                    onChanged: _viewMode
+                                        ? null
+                                        : (value) {
+                                            if (value != null) {
+                                              setState(
+                                                () => _recurrence = value,
+                                              );
+                                            }
+                                          },
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
+                                InkWell(
+                                  onTap: _viewMode ? null : _pickDate,
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: InputDecorator(
+                                    decoration: const InputDecoration(
+                                      labelText: 'Date',
+                                      border: OutlineInputBorder(),
+                                      prefixIcon: Icon(Icons.calendar_today),
+                                      suffixIcon: Icon(Icons.edit_calendar),
+                                    ),
+                                    child: Text(
+                                      DateFormat.yMMMMd().format(_selectedDate),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                InkWell(
+                                  onTap: _viewMode ? null : _pickTime,
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: InputDecorator(
+                                    decoration: const InputDecoration(
+                                      labelText: 'Time',
+                                      border: OutlineInputBorder(),
+                                      prefixIcon: Icon(Icons.access_time),
+                                      suffixIcon: Icon(Icons.edit),
+                                    ),
+                                    child: Text(_selectedTime.format(context)),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                InkWell(
+                                  onTap: _viewMode ? null : _pickDateRange,
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: InputDecorator(
+                                    decoration: const InputDecoration(
+                                      labelText: 'Range',
+                                      border: OutlineInputBorder(),
+                                      prefixIcon: Icon(Icons.date_range),
+                                      suffixIcon: Icon(Icons.edit_calendar),
+                                    ),
+                                    child: Text(
+                                      _selectedRange == null
+                                          ? 'No range selected'
+                                          : '${DateFormat.yMMMd().format(_selectedRange!.start)} - ${DateFormat.yMMMd().format(_selectedRange!.end)}',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
-      bottomNavigationBar: AnimatedPadding(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: SafeArea(
-          top: false,
-          minimum: const EdgeInsets.all(16),
-          child: FilledButton.icon(
-            onPressed: _saving ? null : _save,
-            icon: _saving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.check),
-            label: const Text('Save Reminder'),
-          ),
-        ),
-      ),
+      bottomNavigationBar: _viewMode
+          ? null
+          : AnimatedPadding(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: SafeArea(
+                top: false,
+                minimum: const EdgeInsets.all(16),
+                child: FilledButton.icon(
+                  onPressed: _saving ? null : _save,
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.check),
+                  label: Text(isEditing ? 'Save Changes' : 'Save Reminder'),
+                ),
+              ),
+            ),
     );
   }
 }
@@ -464,10 +607,12 @@ class _ListPickerDropdown extends ConsumerWidget {
   const _ListPickerDropdown({
     required this.selectedListId,
     required this.onChanged,
+    this.enabled = true,
   });
 
   final int? selectedListId;
   final ValueChanged<int?> onChanged;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -475,7 +620,7 @@ class _ListPickerDropdown extends ConsumerWidget {
 
     return listsAsync.when(
       data: (lists) => DropdownButtonFormField<int?>(
-        value: lists.any((l) => l.id == selectedListId)
+        initialValue: lists.any((l) => l.id == selectedListId)
             ? selectedListId
             : null,
         decoration: const InputDecoration(
@@ -484,10 +629,7 @@ class _ListPickerDropdown extends ConsumerWidget {
           prefixIcon: Icon(Icons.list),
         ),
         items: [
-          const DropdownMenuItem<int?>(
-            value: null,
-            child: Text('None'),
-          ),
+          const DropdownMenuItem<int?>(value: null, child: Text('None')),
           ...lists.map(
             (list) => DropdownMenuItem<int?>(
               value: list.id,
@@ -501,7 +643,7 @@ class _ListPickerDropdown extends ConsumerWidget {
             ),
           ),
         ],
-        onChanged: onChanged,
+        onChanged: enabled ? onChanged : null,
       ),
       loading: () => const SizedBox.shrink(),
       error: (_, __) => const SizedBox.shrink(),
