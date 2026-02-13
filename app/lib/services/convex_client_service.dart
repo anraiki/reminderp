@@ -25,9 +25,24 @@ class ConvexClientService {
       );
     }
 
-    await ConvexClient.initialize(
-      ConvexConfig(deploymentUrl: deploymentUrl, clientId: 'reminderp-flutter'),
-    );
+    try {
+      await ConvexClient.initialize(
+        ConvexConfig(
+          deploymentUrl: deploymentUrl,
+          clientId: 'reminderp-flutter',
+        ),
+      );
+    } catch (e) {
+      final message = e.toString();
+      if (message.contains('libconvex_flutter.so')) {
+        throw StateError(
+          'Convex native library failed to load on Android. '
+          'Rebuild with a clean native build (`flutter clean`, uninstall app, then `flutter run`). '
+          'On Windows, ensure Android NDK and Visual Studio Build Tools (C++) are installed.',
+        );
+      }
+      rethrow;
+    }
     _client = ConvexClient.instance;
     return _client!;
   }
