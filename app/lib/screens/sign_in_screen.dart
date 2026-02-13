@@ -90,8 +90,9 @@ class _SignInScreenState extends State<SignInScreen> {
       await _authService.signInWithGoogle();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Opening Google sign-in...')),
+        const SnackBar(content: Text('Signed in with Google')),
       );
+      Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(

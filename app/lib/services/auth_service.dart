@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -74,37 +76,67 @@ class AuthService {
   }
 
   Future<void> signInWithGoogle() async {
-    if (!kIsWeb) {
-      throw StateError(
-        'Google sign-in is currently enabled for web builds. Use email on mobile/desktop.',
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final port = server.port;
+
+    try {
+      final result = await _callSignIn(
+        args: {
+          'provider': 'google',
+          'params': {'redirectTo': 'http://localhost:$port'},
+        },
       );
-    }
 
-    final result = await _callSignIn(
-      args: {
-        'provider': 'google',
-        'params': {'redirectTo': '/'},
-      },
+      final redirect = result['redirect'] as String?;
+      if (redirect == null || redirect.isEmpty) {
+        throw StateError('Google sign-in did not return a redirect URL.');
+      }
+
+      final verifier = result['verifier'] as String?;
+
+      final launched = await launchUrl(Uri.parse(redirect));
+      if (!launched) {
+        throw StateError('Could not open Google sign-in page.');
+      }
+
+      final code = await _waitForOAuthCode(server);
+
+      final signInResult = await _callSignIn(
+        args: {
+          'params': {'code': code},
+          if (verifier != null && verifier.isNotEmpty) 'verifier': verifier,
+        },
+      );
+      await _persistTokens(signInResult);
+    } finally {
+      await server.close();
+    }
+  }
+
+  Future<String> _waitForOAuthCode(HttpServer server) async {
+    final completer = Completer<String>();
+
+    server.listen((request) {
+      final code = request.uri.queryParameters['code'];
+      request.response
+        ..statusCode = 200
+        ..headers.contentType = ContentType.html
+        ..write(
+          '<html><body style="font-family:sans-serif;text-align:center;padding:40px">'
+          '<h2>Sign-in complete!</h2>'
+          '<p>You can close this window and return to the app.</p>'
+          '</body></html>',
+        );
+      request.response.close();
+      if (code != null && code.isNotEmpty && !completer.isCompleted) {
+        completer.complete(code);
+      }
+    });
+
+    return completer.future.timeout(
+      const Duration(minutes: 5),
+      onTimeout: () => throw TimeoutException('Google sign-in timed out.'),
     );
-
-    final redirect = result['redirect'] as String?;
-    if (redirect == null || redirect.isEmpty) {
-      throw StateError('Google sign-in did not return a redirect URL.');
-    }
-
-    final verifier = result['verifier'] as String?;
-    if (verifier != null && verifier.isNotEmpty) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_oauthVerifierKey, verifier);
-    }
-
-    final launched = await launchUrl(
-      Uri.parse(redirect),
-      webOnlyWindowName: '_self',
-    );
-    if (!launched) {
-      throw StateError('Could not open Google sign-in page.');
-    }
   }
 
   Future<void> signOut() async {
